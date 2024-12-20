@@ -20,6 +20,7 @@ jobs:
         id: tag
         run: |
           IMAGE_TAG="0.0.0"
+          IMAGE_TAG_DEV="dev-${GITHUB_SHA:0:7}-$(date +%s)"
           if [[ "${{ github.ref }}" == "refs/tags/"* ]]; then
             REF=${{ github.ref }};
             TAG_FULL=${REF#refs/*/};
@@ -27,6 +28,7 @@ jobs:
           fi
           echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
           echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "image_tag_dev=${IMAGE_TAG_DEV}" >> $GITHUB_OUTPUT
 
       - name: 'Set up QEMU'
         uses: docker/setup-qemu-action@v2
@@ -41,16 +43,33 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.CR_PAT }}
 
-      - name: 'Build and push'
-        id: docker_build
+      - name: 'Build and push dev image'
+        if: ${{ steps.tag.outputs.image_tag == '0.0.0' }}
+        id: docker_build_dev
+        uses: docker/build-push-action@v4
+        with:
+          push: true
+          tags: |
+            ghcr.io/flipperdevices/flpr.app:${{steps.tag.outputs.image_tag}}
+            ghcr.io/flipperdevices/flpr.app:${{steps.tag.outputs.image_tag_dev}}
+
+      - name: 'Build and push prod image'
+        if: ${{ steps.tag.outputs.image_tag != '0.0.0' }}
+        id: docker_build_prod
         uses: docker/build-push-action@v4
         with:
           push: true
           tags: ghcr.io/flipperdevices/flpr.app:${{steps.tag.outputs.image_tag}}
 
-      - name: 'Image digest'
+      - name: 'Show dev image digest'
+        if: ${{ steps.tag.outputs.image_tag == '0.0.0' }}
         run: |
-          echo ${{ steps.docker_build.outputs.digest }}
+          echo ${{ steps.docker_build_dev.outputs.digest }}
+
+      - name: 'Show prod image digest'
+        if: ${{ steps.tag.outputs.image_tag != '0.0.0' }}
+        run: |
+          echo ${{ steps.docker_build_prod.outputs.digest }}
 
       - name: 'Trigger k8s to use new image'
         uses: peter-evans/repository-dispatch@v2
